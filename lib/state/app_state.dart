@@ -1,0 +1,165 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:latlong2/latlong.dart';
+
+import '../models/gtfs_models.dart';
+import '../models/vehicle.dart';
+import '../services/gtfs_repository.dart';
+import '../services/location_service.dart';
+import '../services/realtime_source.dart';
+import '../services/settings_store.dart';
+
+/// Centro por omissão: Barreiro.
+const LatLng kDefaultCenter = LatLng(38.6526, -9.0748);
+
+/// Estado global da app (provider).
+class AppState extends ChangeNotifier {
+  AppState();
+
+  final GtfsRepository _repository = GtfsRepository();
+  final LocationService _location = const LocationService();
+
+  GtfsFeed? feed;
+  bool loading = true;
+  String? error;
+
+  List<LiveVehicle> vehicles = const [];
+  bool vehiclesLoading = false;
+  String? realtimeError;
+
+  SettingsStore? _settings;
+  Set<String> _favorites = const {};
+
+  String realtimeUrl = '';
+  bool realtimeEnabled = false;
+  List<String> realtimeArrayPath = const [];
+
+  LatLng? currentLocation;
+
+  Timer? _pollTimer;
+
+  Set<String> get favorites => _favorites;
+
+  List<Stop> get favoriteStops {
+    final f = feed;
+    if (f == null) return const [];
+    return _favorites
+        .map((id) => f.stops[id])
+        .whereType<Stop>()
+        .toList();
+  }
+
+  Future<void> init() async {
+    _settings = await SettingsStore.load();
+    _favorites = _settings!.favoriteStopIds;
+    realtimeUrl = _settings!.realtimeUrl ?? '';
+    realtimeEnabled = _settings!.realtimeEnabled;
+    realtimeArrayPath = _settings!.arrayPath;
+
+    await loadGtfs();
+    if (realtimeEnabled && realtimeUrl.isNotEmpty) {
+      startRealtimePolling();
+    }
+  }
+
+  Future<void> loadGtfs() async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      feed = await _repository.load();
+    } catch (e) {
+      error = 'Não foi possível carregar os dados da TCB.\n$e';
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  bool isFavorite(String stopId) => _favorites.contains(stopId);
+
+  Future<void> toggleFavorite(String stopId) async {
+    final fav = !_favorites.contains(stopId);
+    fav ? _favorites.add(stopId) : _favorites.remove(stopId);
+    notifyListeners();
+    await _settings?.setFavorite(stopId, fav);
+  }
+
+  Future<void> setRealtimeConfig({
+    required String url,
+    required bool enabled,
+    List<String>? arrayPath,
+  }) async {
+    realtimeUrl = url;
+    realtimeEnabled = enabled;
+    if (arrayPath != null) realtimeArrayPath = arrayPath;
+    await _settings?.setRealtimeUrl(url);
+    await _settings?.setRealtimeEnabled(enabled);
+    await _settings?.setArrayPath(realtimeArrayPath);
+
+    if (enabled && url.isNotEmpty) {
+      startRealtimePolling();
+      await refreshVehicles();
+    } else {
+      stopRealtimePolling();
+      vehicles = const [];
+      realtimeError = null;
+      notifyListeners();
+    }
+  }
+
+  void startRealtimePolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      refreshVehicles();
+    });
+  }
+
+  void stopRealtimePolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  Future<void> refreshVehicles() async {
+    if (realtimeUrl.isEmpty) return;
+    if (vehiclesLoading) return;
+    vehiclesLoading = true;
+    notifyListeners();
+    try {
+      final source = JsonVehiclesSource(JsonVehiclesConfig(
+        url: realtimeUrl,
+        arrayPath: realtimeArrayPath,
+      ));
+      vehicles = await source.fetch();
+      realtimeError = null;
+    } catch (e) {
+      realtimeError = 'Tempo real indisponível: $e';
+    } finally {
+      vehiclesLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> locateMe() async {
+    final p = await _location.currentPosition();
+    if (p != null) {
+      currentLocation = p;
+      notifyListeners();
+      return true;
+    }
+    return false;
+  }
+
+  List<Stop> nearestStops(LatLng origin, {int limit = 15}) {
+    final f = feed;
+    if (f == null) return const [];
+    return _location.nearestStops(f, origin, limit: limit);
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+}
