@@ -1,0 +1,41 @@
+name: Build Android APK
+
+# Constrói o APK na nuvem (GitHub Actions) — não precisas de instalar nada no PC.
+# Dispara automaticamente ao enviar código para `main`, ou manualmente no separador Actions.
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Gerar scaffolding Android
+        run: flutter create --platforms=android --project-name tcb_live .
+
+      - name: Adicionar permissões Android
+        run: |
+          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/> <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/> <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/> <application|' android/app/src/main/AndroidManifest.xml
+          sed -i 's|android:label="tcb_live"|android:label="TCB Live"|' android/app/src/main/AndroidManifest.xml
+
+      - name: Resolver dependências
+        run: flutter pub get
+
+      - name: Compilar APK (release)
+        run: flutter build apk --release
+
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcb-live-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
