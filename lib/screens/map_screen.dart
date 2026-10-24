@@ -54,13 +54,17 @@ class _MapScreenState extends State<MapScreen> {
       for (final stop in feed.stops.values) {
         markers.add(Marker(
           point: stop.point,
-          width: 16,
-          height: 16,
+          width: 30,
+          height: 30,
           alignment: Alignment.center,
-          onTap: (_, __) => _openStop(stop),
-          child: StopMarkerWidget(
-            selected: false,
-            color: Theme.of(context).colorScheme.primary,
+          child: GestureDetector(
+            onTap: () => _openStop(stop),
+            child: Center(
+              child: StopMarkerWidget(
+                selected: false,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
           ),
         ));
       }
