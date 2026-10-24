@@ -24,11 +24,7 @@ class LocationService {
         return null;
       }
 
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-        ),
-      );
+      final pos = await Geolocator.getCurrentPosition();
       return LatLng(pos.latitude, pos.longitude);
     } catch (_) {
       return null;
