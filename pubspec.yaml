@@ -1,0 +1,40 @@
+name: tcb_live
+description: >-
+  App Android para ver os autocarros da TCB (Barreiro): paragens, carreiras,
+  horários, próximas passagens e posições em tempo real num mapa OpenStreetMap.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI / ícones
+  cupertino_icons: ^1.0.8
+
+  # Mapa (OpenStreetMap) e coordenadas
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # Rede, ZIP (GTFS) e persistência
+  http: ^1.2.1
+  archive: ^3.6.1
+  path_provider: ^2.1.3
+
+  # Estado e preferências
+  provider: ^6.1.2
+  shared_preferences: ^2.2.3
+
+  # Localização (opcional — a app funciona sem permissão)
+  geolocator: ^12.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
