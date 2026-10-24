@@ -18,7 +18,10 @@ class GtfsParser {
       if (!file.isFile) continue;
       final name = file.name.split('/').last.toLowerCase();
       if (name.endsWith('.txt')) {
-        files[name] = utf8.decode(file.readBytes(), allowMalformed: true);
+        final content = file.content;
+        if (content is List<int>) {
+          files[name] = utf8.decode(content, allowMalformed: true);
+        }
       }
     }
 
