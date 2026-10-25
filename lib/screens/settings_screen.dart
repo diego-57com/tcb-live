@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
 
-/// Definições: configuração do tempo real e dados/atribuição.
+/// Definições: configuração do tempo real (feita pelo utilizador) e dados.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -14,12 +14,22 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _url = TextEditingController();
   final _arrayPath = TextEditingController();
+  final _lat = TextEditingController();
+  final _lon = TextEditingController();
+  final _bearing = TextEditingController();
+  final _headsign = TextEditingController();
+  final _color = TextEditingController();
   bool _seeded = false;
 
   @override
   void dispose() {
     _url.dispose();
     _arrayPath.dispose();
+    _lat.dispose();
+    _lon.dispose();
+    _bearing.dispose();
+    _headsign.dispose();
+    _color.dispose();
     super.dispose();
   }
 
@@ -27,7 +37,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (_seeded) return;
     _url.text = app.realtimeUrl;
     _arrayPath.text = app.realtimeArrayPath.join(', ');
+    _lat.text = app.latField;
+    _lon.text = app.lonField;
+    _bearing.text = app.bearingField;
+    _headsign.text = app.headsignField;
+    _color.text = app.colorField;
     _seeded = true;
+  }
+
+  Future<void> _save(AppState app) async {
+    await app.setRealtimeConfig(
+      url: _url.text.trim(),
+      enabled: app.realtimeEnabled,
+      arrayPath: _parseList(_arrayPath.text),
+      latField: _lat.text.trim().isEmpty ? 'lat' : _lat.text.trim(),
+      lonField: _lon.text.trim().isEmpty ? 'lon' : _lon.text.trim(),
+      bearingField: _bearing.text.trim(),
+      headsignField: _headsign.text.trim(),
+      colorField: _color.text.trim(),
+    );
+    if (app.realtimeEnabled && app.realtimeUrl.isNotEmpty) {
+      await app.refreshVehicles();
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configuração guardada.')),
+      );
+    }
   }
 
   @override
@@ -42,83 +78,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           _sectionTitle(context, 'Tempo real'),
           Card(
-            child: Column(
-              children: [
-                SwitchListTile(
-                  title: const Text('Mostrar posições em direto'),
-                  subtitle: const Text('Usa um endpoint JSON (backend privado da TCB).'),
-                  value: app.realtimeEnabled,
-                  onChanged: (v) async {
-                    await app.setRealtimeConfig(
-                      url: _url.text.trim(),
-                      enabled: v,
-                      arrayPath: _parseArrayPath(_arrayPath.text),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: TextField(
-                    controller: _url,
-                    decoration: const InputDecoration(
-                      labelText: 'URL do endpoint (JSON)',
-                      hintText: 'https://…/vehicles',
-                      border: OutlineInputBorder(),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Mostrar posições em direto'),
+                    subtitle: const Text(
+                      'Lê um endpoint JSON que tu configurares abaixo.',
                     ),
+                    value: app.realtimeEnabled,
+                    onChanged: (v) async {
+                      await app.setRealtimeConfig(
+                        url: _url.text.trim(),
+                        enabled: v,
+                        arrayPath: _parseList(_arrayPath.text),
+                        latField: _lat.text.trim().isEmpty
+                            ? 'lat'
+                            : _lat.text.trim(),
+                        lonField: _lon.text.trim().isEmpty
+                            ? 'lon'
+                            : _lon.text.trim(),
+                        bearingField: _bearing.text.trim(),
+                        headsignField: _headsign.text.trim(),
+                        colorField: _color.text.trim(),
+                      );
+                    },
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                  child: TextField(
-                    controller: _arrayPath,
-                    decoration: const InputDecoration(
-                      labelText: 'Caminho até à lista (separado por vírgulas)',
-                      hintText: 'ex.: data, vehicles  (vazio = a raiz é uma lista)',
-                      border: OutlineInputBorder(),
-                    ),
+                  const SizedBox(height: 8),
+                  _field(_url, 'URL do endpoint (JSON)',
+                      'https://exemplo.pt/api/realtime'),
+                  _field(_arrayPath, 'Caminho até à lista (vírgulas)',
+                      'ex.: results, vehicles  (vazio = a raiz é a lista)'),
+                  const Divider(height: 32),
+                  Text(
+                    'Mapeamento dos campos (vazio = padrão)',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Como descobrir o URL: abre o site "Mapa em direto" da TCB no Chrome '
-                      '→ F12 (DevTools) → separador Network → procura pedidos XHR/fetch '
-                      'que devolvem posições de autocarros → copia esse URL aqui.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                    ),
+                  const SizedBox(height: 12),
+                  _field(_lat, 'Campo da latitude', 'padrão: lat'),
+                  _field(_lon, 'Campo da longitude', 'padrão: lon'),
+                  _field(_bearing, 'Campo do rumo (bearing)', 'padrão: bearing'),
+                  _field(_headsign, 'Campo do destino', 'padrão: headsign'),
+                  _field(_color, 'Campo da cor (hex)',
+                      'opcional, ex.: route_color'),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.save),
+                    label: const Text('Guardar e atualizar'),
+                    onPressed: () => _save(app),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      icon: const Icon(Icons.save),
-                      label: const Text('Guardar e atualizar'),
-                      onPressed: () async {
-                        await app.setRealtimeConfig(
-                          url: _url.text.trim(),
-                          enabled: app.realtimeEnabled,
-                          arrayPath: _parseArrayPath(_arrayPath.text),
-                        );
-                        if (app.realtimeEnabled && app.realtimeUrl.isNotEmpty) {
-                          await app.refreshVehicles();
-                        }
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Configuração guardada.')),
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -127,7 +142,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: ListTile(
               leading: const Icon(Icons.refresh),
               title: const Text('Recarregar dados GTFS'),
-              subtitle: const Text('Descarrega de novo o horário/paragens da TCB.'),
+              subtitle:
+                  const Text('Descarrega de novo o horário/paragens da TCB.'),
               onTap: app.loadGtfs,
             ),
           ),
@@ -137,11 +153,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                'Dados de horários e paragens: Transportes Colectivos do Barreiro '
-                '(GTFS, licença CC BY 4.0).\n\n'
-                'Mapa: © OpenStreetMap contributors (tiles OSM).\n\n'
-                'Esta app não é afiliada à TCB. As posições em tempo real usam o '
-                'endpoint configurado por ti acima.',
+                'Dados de horários e paragens: Transportes Colectivos do '
+                'Barreiro (GTFS, licença CC BY 4.0).\n\n'
+                'Mapa: © OpenStreetMap contributors.\n\n'
+                'As posições em tempo real usam apenas o endpoint que '
+                'configurares nesta aplicação. Esta app não é afiliada à TCB.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.outline,
                       height: 1.5,
@@ -152,7 +168,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 12),
           Center(
             child: Text(
-              'TCB Live · v1.0.0',
+              'TCB Live · v1.1.0',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.outline,
                   ),
@@ -160,6 +176,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+
+  Widget _field(TextEditingController c, String label, String hint) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: c,
+        autocorrect: false,
+        enableSuggestions: false,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
       ),
     );
   }
@@ -177,7 +210,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  List<String> _parseArrayPath(String text) {
+  List<String> _parseList(String text) {
     return text
         .split(',')
         .map((e) => e.trim())
