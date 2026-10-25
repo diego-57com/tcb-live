@@ -84,9 +84,11 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     _seed(variants);
 
     final selected = _selected;
-    final live = selected == null
-        ? app.vehiclesForRouteNumber(number)
-        : _vehiclesForVariant(app.vehiclesForRouteNumber(number), selected);
+    // Filtrar autocarros pela variante selecionada
+    final liveVehicles = _vehiclesForVariant(
+      app.vehiclesForRouteNumber(number),
+      selected ?? variants.isNotEmpty ? variants.first : null,
+    );
 
     return Scaffold(
       appBar: AppBar(title: Text('Carreira $number')),
@@ -112,10 +114,10 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
-                    if (live.isNotEmpty)
+                    if (liveVehicles.isNotEmpty)
                       Chip(
                         avatar: const Icon(Icons.directions_bus, size: 16),
-                        label: Text('${live.length} em direto'),
+                        label: Text('${liveVehicles.length} em direto'),
                       ),
                   ],
                 ),
@@ -146,35 +148,43 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                 else ...[
                   _RouteMap(
                     feed: feed,
-                    trip: selected,
-                    vehicles: live,
+                    trip: selected!,
+                    vehicles: liveVehicles,
                     routeColor: rep?.colorValue,
                   ),
                   const SizedBox(height: 16),
                   Text('Paragens',
                       style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 4),
-                  ..._stopRows(feed, selected, live),
+                  ..._stopRows(feed, selected!, liveVehicles),
                 ],
               ],
             ),
     );
   }
 
-  /// Filtra os veículos da linha pelos que vão no sentido da variante.
+  /// Filtra os veículos pela variante (trip) selecionada.
+  /// Se a headsign da viagem coincide (total ou parcial) com a headsign de algum
+  /// veículo, apenas esses veículos são devolvidos. Se não houver match, devolve
+  /// a lista completa (para não ficar sem automóveis).
   List<LiveVehicle> _vehiclesForVariant(
-      List<LiveVehicle> vehicles, Trip trip) {
-    final headsign = trip.headsign.trim().toLowerCase();
-    if (headsign.isEmpty) return vehicles;
+      List<LiveVehicle> vehicles, Trip? trip) {
+    if (trip == null || trip.headsign == null || trip.headsign.trim().isEmpty) {
+      return vehicles; // Sem headsign da viagem → mostrar todos
+    }
+    final h = trip.headsign.trim().toLowerCase();
     final matched = vehicles.where((v) {
-      final h = (v.headsign ?? '').trim().toLowerCase();
-      if (h.isEmpty) return false;
-      return h == headsign || h.contains(headsign) || headsign.contains(h);
+      final hV = (v.headsign ?? '').trim().toLowerCase();
+      if (hV.isEmpty) return false; // veículo sem headsign → excluir
+      // Match total ou parcial (contém)
+      return hV == h || hV.contains(h) || h.contains(h);
     }).toList();
-    // Se a fonte não trouxer destino utilizável, mostra todos os da linha.
+    // Se ninguém match, mostrar todos (fallback)
     return matched.isEmpty ? vehicles : matched;
   }
 
+  /// Devolve as previsões de passagens para as paragens da variante selecionada,
+  /// organizadas pela variante.
   List<Widget> _stopRows(
       GtfsFeed feed, Trip trip, List<LiveVehicle> vehicles) {
     final stops = feed.stopsOfTrip(trip.id);
@@ -184,14 +194,14 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
       ];
     }
 
-    // Índice da paragem mais próxima de cada autocarro (posição aproximada).
+    // Associa cada autocarro à paragem mais próxima (posição aproximada).
     final busAtStop = <int, List<LiveVehicle>>{};
     for (final v in vehicles) {
       final idx = _nearestStopIndex(stops, v.point);
       if (idx >= 0) (busAtStop[idx] ??= []).add(v);
     }
 
-    // Viagens desta variante (para as próximas passagens por paragem).
+    // Viagens desta variante (mesmo shape/headsign da trip selecionada).
     final tripIds = feed
         .tripsForShortName(widget.shortName)
         .where((t) => _sameVariant(t, trip))
@@ -364,7 +374,7 @@ class _StopRow extends StatefulWidget {
   final DateTime now;
 
   @override
-  State<_StopRow> createState() => _StopRowState();
+  State<_StopRow> createState() => _StopRowState;
 }
 
 class _StopRowState extends State<_StopRow> {
@@ -395,9 +405,7 @@ class _StopRowState extends State<_StopRow> {
                       Expanded(
                         child: Container(
                           width: 2,
-                          color: isFirst
-                              ? Colors.transparent
-                              : scheme.outlineVariant,
+                          color: isFirst ? Colors.transparent : scheme.outlineVariant,
                         ),
                       ),
                       if (hasBus)
@@ -407,20 +415,15 @@ class _StopRowState extends State<_StopRow> {
                           width: isFirst || isLast ? 14 : 10,
                           height: isFirst || isLast ? 14 : 10,
                           decoration: BoxDecoration(
-                            color: isFirst || isLast
-                                ? scheme.primary
-                                : scheme.surface,
+                            color: isFirst || isLast ? scheme.primary : scheme.surface,
                             shape: BoxShape.circle,
-                            border: Border.all(
-                                color: scheme.primary, width: 2),
+                            border: Border.color(scheme.primary, width: 2),
                           ),
                         ),
                       Expanded(
                         child: Container(
                           width: 2,
-                          color: isLast
-                              ? Colors.transparent
-                              : scheme.outlineVariant,
+                          color: isLast ? Colors.transparent : scheme.outlineVariant,
                         ),
                       ),
                     ],
@@ -442,9 +445,8 @@ class _StopRowState extends State<_StopRow> {
                                     .textTheme
                                     .bodyMedium
                                     ?.copyWith(
-                                      fontWeight: isFirst || isLast
-                                          ? FontWeight.w700
-                                          : FontWeight.w500,
+                                      fontWeight:
+                                          isFirst || isLast ? FontWeight.w700 : FontWeight.w500,
                                     ),
                               ),
                               if (hasBus)
@@ -465,10 +467,7 @@ class _StopRowState extends State<_StopRow> {
                             style: Theme.of(context)
                                 .textTheme
                                 .bodySmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: scheme.primary,
-                                ),
+                                ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary),
                           ),
                         ],
                         Icon(
@@ -480,7 +479,7 @@ class _StopRowState extends State<_StopRow> {
                     ),
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -503,6 +502,7 @@ class _StopRowState extends State<_StopRow> {
                     ],
                   ),
           ),
+        ),
       ],
     );
   }
@@ -531,7 +531,7 @@ class _BusBubble extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
+        border: Border.color(Colors.white, width: 2),
         boxShadow: const [
           BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 1)),
         ],
@@ -594,9 +594,7 @@ class _DepartureLine extends StatelessWidget {
             wait,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontWeight: mins <= 10 ? FontWeight.w700 : FontWeight.w400,
-                  color: mins <= 0
-                      ? scheme.primary
-                      : (mins <= 5 ? scheme.error : scheme.onSurface),
+                  color: mins <= 0 ? scheme.primary : (mins < 5 ? scheme.error : scheme.outline),
                 ),
           ),
         ],
