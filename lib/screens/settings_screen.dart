@@ -132,6 +132,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     label: const Text('Guardar e atualizar'),
                     onPressed: () => _save(app),
                   ),
+                  const SizedBox(height: 24),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.schedule, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Atualizar posições a cada ${app.refreshSeconds}s',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final s in const [3, 5, 10, 15, 30, 60])
+                        ChoiceChip(
+                          label: Text('${s}s'),
+                          selected: app.refreshSeconds == s,
+                          onSelected: (_) => app.setRefreshSeconds(s),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
