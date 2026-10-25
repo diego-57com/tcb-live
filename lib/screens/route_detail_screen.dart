@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -5,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../models/gtfs_models.dart';
 import '../models/vehicle.dart';
+import '../services/departure_engine.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
 import '../widgets/markers.dart';
@@ -27,6 +30,22 @@ class RouteDetailScreen extends StatefulWidget {
 class _RouteDetailScreenState extends State<RouteDetailScreen> {
   Trip? _selected;
   bool _seeded = false;
+  DateTime _now = DateTime.now();
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
 
   void _seed(List<Trip> variants) {
     if (_seeded || variants.isEmpty) return;
@@ -64,7 +83,10 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     final variants = _variants(trips);
     _seed(variants);
 
-    final live = app.vehiclesForRouteNumber(number);
+    final selected = _selected;
+    final live = selected == null
+        ? app.vehiclesForRouteNumber(number)
+        : _vehiclesForVariant(app.vehiclesForRouteNumber(number), selected);
 
     return Scaffold(
       appBar: AppBar(title: Text('Carreira $number')),
@@ -98,8 +120,6 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                _RouteMap(feed: feed, vehicles: live, routeColor: rep?.colorValue),
-                const SizedBox(height: 16),
                 Text('Variante', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Wrap(
@@ -120,27 +140,107 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                Text('Paragens', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                if (_selected == null)
-                  const EmptyState(icon: Icons.signpost, title: 'Seleciona uma variante')
-                else ..._stopRows(feed, _selected!),
+                if (selected == null)
+                  const EmptyState(
+                      icon: Icons.signpost, title: 'Seleciona uma variante')
+                else ...[
+                  _RouteMap(
+                    feed: feed,
+                    trip: selected,
+                    vehicles: live,
+                    routeColor: rep?.colorValue,
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Paragens',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  ..._stopRows(feed, selected, live),
+                ],
               ],
             ),
     );
   }
 
-  List<Widget> _stopRows(GtfsFeed feed, Trip trip) {
+  /// Filtra os veículos da linha pelos que vão no sentido da variante.
+  List<LiveVehicle> _vehiclesForVariant(
+      List<LiveVehicle> vehicles, Trip trip) {
+    final headsign = trip.headsign.trim().toLowerCase();
+    if (headsign.isEmpty) return vehicles;
+    final matched = vehicles.where((v) {
+      final h = (v.headsign ?? '').trim().toLowerCase();
+      if (h.isEmpty) return false;
+      return h == headsign || h.contains(headsign) || headsign.contains(h);
+    }).toList();
+    // Se a fonte não trouxer destino utilizável, mostra todos os da linha.
+    return matched.isEmpty ? vehicles : matched;
+  }
+
+  List<Widget> _stopRows(
+      GtfsFeed feed, Trip trip, List<LiveVehicle> vehicles) {
     final stops = feed.stopsOfTrip(trip.id);
     if (stops.isEmpty) {
       return const [
         EmptyState(icon: Icons.signpost, title: 'Sem paragens definidas'),
       ];
     }
+
+    // Índice da paragem mais próxima de cada autocarro (posição aproximada).
+    final busAtStop = <int, List<LiveVehicle>>{};
+    for (final v in vehicles) {
+      final idx = _nearestStopIndex(stops, v.point);
+      if (idx >= 0) (busAtStop[idx] ??= []).add(v);
+    }
+
+    // Viagens desta variante (para as próximas passagens por paragem).
+    final tripIds = feed
+        .tripsForShortName(widget.shortName)
+        .where((t) => _sameVariant(t, trip))
+        .map((t) => t.id)
+        .toSet();
+
     return [
       for (var i = 0; i < stops.length; i++)
-        _StopRow(index: i, stop: stops[i], total: stops.length),
+        _StopRow(
+          index: i,
+          stop: stops[i],
+          total: stops.length,
+          buses: busAtStop[i] ?? const [],
+          routeColor: _routeColorValue(feed, trip),
+          departures: DepartureEngine.nextDeparturesForTrips(
+            feed,
+            stops[i].id,
+            tripIds.isEmpty ? {trip.id} : tripIds,
+            _now,
+            limit: 4,
+          ),
+          now: _now,
+        ),
     ];
+  }
+
+  static bool _sameVariant(Trip a, Trip b) {
+    if (a.shapeId != null && b.shapeId != null) return a.shapeId == b.shapeId;
+    return a.headsign == b.headsign;
+  }
+
+  int _routeColorValue(GtfsFeed feed, Trip trip) {
+    final route = feed.routes[trip.routeId];
+    return route?.colorValue ?? 0xFF0B7A4E;
+  }
+
+  /// Índice da paragem mais próxima de [point] (posição aproximada).
+  int _nearestStopIndex(List<Stop> stops, LatLng point) {
+    const distance = Distance();
+    var best = -1;
+    var bestMeters = double.infinity;
+    for (var i = 0; i < stops.length; i++) {
+      final m = distance.as(LengthUnit.Meter, point, stops[i].point);
+      if (m < bestMeters) {
+        bestMeters = m;
+        best = i;
+      }
+    }
+    return best;
   }
 
   List<Trip> _variants(List<Trip> trips) {
@@ -155,15 +255,17 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   }
 }
 
-/// Mapa da carreira: trajetos de todas as variantes + autocarros em direto.
+/// Mapa de uma única variante: trajeto, paragens da variante e autocarros.
 class _RouteMap extends StatelessWidget {
   const _RouteMap({
     required this.feed,
+    required this.trip,
     required this.vehicles,
     this.routeColor,
   });
 
   final GtfsFeed feed;
+  final Trip trip;
   final List<LiveVehicle> vehicles;
   final int? routeColor;
 
@@ -172,23 +274,21 @@ class _RouteMap extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final color = routeColor != null ? Color(routeColor!) : scheme.primary;
 
-    // Um polyline por shape distinto das variantes da carreira.
-    final polylines = <Polyline>[];
-    final seenShapes = <String>{};
-    for (final trip in feed.trips.values) {
-      final sid = trip.shapeId;
-      if (sid == null || sid.isEmpty) continue;
-      if (!seenShapes.add(sid)) continue;
-      final pts = feed.shapes[sid];
-      if (pts == null || pts.length < 2) continue;
-      polylines.add(Polyline(
-        points: pts,
-        strokeWidth: 3,
-        color: color.withAlpha(120),
-      ));
-    }
+    // Apenas o shape da variante selecionada — sem sobreposição.
+    final shapeId = trip.shapeId;
+    final path = shapeId == null ? <LatLng>[] : (feed.shapes[shapeId] ?? <LatLng>[]);
+
+    final stops = feed.stopsOfTrip(trip.id);
 
     final markers = <Marker>[
+      for (final stop in stops)
+        Marker(
+          point: stop.point,
+          width: 18,
+          height: 18,
+          alignment: Alignment.center,
+          child: StopMarkerWidget(selected: false, color: color),
+        ),
       for (final v in vehicles)
         Marker(
           point: v.point,
@@ -204,19 +304,19 @@ class _RouteMap extends StatelessWidget {
     ];
 
     final allPoints = <LatLng>[
-      ...polylines.expand((p) => p.points),
+      ...path,
+      ...stops.map((s) => s.point),
       ...vehicles.map((v) => v.point),
     ];
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: SizedBox(
-        height: 280,
+        height: 300,
         child: FlutterMap(
           options: MapOptions(
-            initialCenter: allPoints.isNotEmpty
-                ? allPoints.first
-                : const LatLng(38.6526, -9.0748),
+            initialCenter:
+                allPoints.isNotEmpty ? allPoints.first : const LatLng(38.6526, -9.0748),
             initialZoom: 13,
             initialCameraFit: allPoints.length >= 2
                 ? CameraFit.bounds(
@@ -231,7 +331,10 @@ class _RouteMap extends StatelessWidget {
               userAgentPackageName: 'com.example.tcb_live',
               maxZoom: 19,
             ),
-            PolylineLayer(polylines: polylines),
+            if (path.length >= 2)
+              PolylineLayer(polylines: [
+                Polyline(points: path, strokeWidth: 4, color: color),
+              ]),
             MarkerLayer(markers: markers),
           ],
         ),
@@ -240,70 +343,270 @@ class _RouteMap extends StatelessWidget {
   }
 }
 
-class _StopRow extends StatelessWidget {
+/// Linha do tempo de uma paragem: bolinha do autocarro, nome e horários.
+class _StopRow extends StatefulWidget {
   const _StopRow({
     required this.index,
     required this.stop,
     required this.total,
+    required this.buses,
+    required this.routeColor,
+    required this.departures,
+    required this.now,
   });
 
   final int index;
   final Stop stop;
   final int total;
+  final List<LiveVehicle> buses;
+  final int routeColor;
+  final List<Departure> departures;
+  final DateTime now;
+
+  @override
+  State<_StopRow> createState() => _StopRowState();
+}
+
+class _StopRowState extends State<_StopRow> {
+  bool _open = false;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isFirst = index == 0;
-    final isLast = index == total - 1;
+    final isFirst = widget.index == 0;
+    final isLast = widget.index == widget.total - 1;
+    final color = Color(widget.routeColor);
+    final hasBus = widget.buses.isNotEmpty;
 
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            width: 28,
-            child: Column(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _open = !_open),
+          borderRadius: BorderRadius.circular(10),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Container(
-                    width: 2,
-                    color: isFirst ? Colors.transparent : scheme.outlineVariant,
+                SizedBox(
+                  width: 32,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          width: 2,
+                          color: isFirst
+                              ? Colors.transparent
+                              : scheme.outlineVariant,
+                        ),
+                      ),
+                      if (hasBus)
+                        _BusBubble(color: color)
+                      else
+                        Container(
+                          width: isFirst || isLast ? 14 : 10,
+                          height: isFirst || isLast ? 14 : 10,
+                          decoration: BoxDecoration(
+                            color: isFirst || isLast
+                                ? scheme.primary
+                                : scheme.surface,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: scheme.primary, width: 2),
+                          ),
+                        ),
+                      Expanded(
+                        child: Container(
+                          width: 2,
+                          color: isLast
+                              ? Colors.transparent
+                              : scheme.outlineVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Container(
-                  width: isFirst || isLast ? 14 : 10,
-                  height: isFirst || isLast ? 14 : 10,
-                  decoration: BoxDecoration(
-                    color: isFirst || isLast ? scheme.primary : scheme.surface,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: scheme.primary, width: 2),
-                  ),
-                ),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Container(
-                    width: 2,
-                    color: isLast ? Colors.transparent : scheme.outlineVariant,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.stop.name,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      fontWeight: isFirst || isLast
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                    ),
+                              ),
+                              if (hasBus)
+                                Text(
+                                  'Autocarro nesta paragem',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(color: color),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (_nextLabel() != null) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            _nextLabel()!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: scheme.primary,
+                                ),
+                          ),
+                        ],
+                        Icon(
+                          _open ? Icons.expand_less : Icons.expand_more,
+                          size: 18,
+                          color: scheme.outline,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
           ),
+        ),
+        if (_open)
+          Padding(
+            padding: const EdgeInsets.only(left: 40, bottom: 8),
+            child: widget.departures.isEmpty
+                ? Text(
+                    'Sem passagens nas próximas 3 horas.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: scheme.outline),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final d in widget.departures)
+                        _DepartureLine(departure: d, now: widget.now),
+                    ],
+                  ),
+          ),
+      ],
+    );
+  }
+
+  /// Minutos até à próxima passagem, se estiver a 10 min ou menos.
+  String? _nextLabel() {
+    if (widget.departures.isEmpty) return null;
+    final mins = widget.departures.first.minutesUntil(widget.now);
+    if (mins > 10) return null;
+    return mins <= 0 ? 'agora' : '$mins min';
+  }
+}
+
+/// Bolinha com o símbolo do autocarro na linha do tempo.
+class _BusBubble extends StatelessWidget {
+  const _BusBubble({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [
+          BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 1)),
+        ],
+      ),
+      child: const Icon(Icons.directions_bus, size: 13, color: Colors.white),
+    );
+  }
+}
+
+/// Uma passagem dentro do menu expandido de uma paragem.
+class _DepartureLine extends StatelessWidget {
+  const _DepartureLine({required this.departure, required this.now});
+
+  final Departure departure;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final mins = departure.minutesUntil(now);
+    final time = _clock(departure.departureSeconds);
+
+    // Tempo até chegar: em minutos quando for 10 min ou menos.
+    final String wait;
+    if (mins <= 0) {
+      wait = 'agora';
+    } else if (mins <= 10) {
+      wait = '$mins min';
+    } else {
+      wait = 'em ${mins ~/ 60}h${(mins % 60).toString().padLeft(2, '0')}';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(Icons.schedule, size: 14, color: scheme.outline),
+          const SizedBox(width: 6),
+          Text(
+            time,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
           const SizedBox(width: 8),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                stop.name,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight:
-                          isFirst || isLast ? FontWeight.w700 : FontWeight.w400,
-                    ),
-              ),
+            child: Text(
+              departure.headsign,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: scheme.outline),
             ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            wait,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: mins <= 10 ? FontWeight.w700 : FontWeight.w400,
+                  color: mins <= 0
+                      ? scheme.primary
+                      : (mins <= 5 ? scheme.error : scheme.onSurface),
+                ),
           ),
         ],
       ),
     );
+  }
+
+  static String _clock(int seconds) {
+    final h = (seconds ~/ 3600) % 24;
+    final m = (seconds % 3600) ~/ 60;
+    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
   }
 }
