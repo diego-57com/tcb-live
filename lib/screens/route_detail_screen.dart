@@ -87,7 +87,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     // Filtrar autocarros pela variante selecionada
     final liveVehicles = _vehiclesForVariant(
       app.vehiclesForRouteNumber(number),
-      selected ?? variants.isNotEmpty ? variants.first : null,
+      selected ?? (variants.isNotEmpty ? variants.first : null),
     );
 
     return Scaffold(
@@ -417,7 +417,7 @@ class _StopRowState extends State<_StopRow> {
                           decoration: BoxDecoration(
                             color: isFirst || isLast ? scheme.primary : scheme.surface,
                             shape: BoxShape.circle,
-                            border: Border.color(scheme.primary, width: 2),
+                            border: Border.all(scheme.primary, width: 2),
                           ),
                         ),
                       Expanded(
@@ -479,10 +479,6 @@ class _StopRowState extends State<_StopRow> {
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
-        ),
         if (_open)
           Padding(
             padding: const EdgeInsets.only(left: 40, bottom: 8),
