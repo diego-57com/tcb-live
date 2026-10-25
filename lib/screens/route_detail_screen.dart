@@ -4,14 +4,21 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/gtfs_models.dart';
+import '../models/vehicle.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
+import '../widgets/markers.dart';
 
-/// Detalhe de uma carreira: variantes (destinos), trajeto no mapa e paragens.
+/// Detalhe de uma carreira (por número): variantes, trajeto e autocarros em direto.
 class RouteDetailScreen extends StatefulWidget {
-  const RouteDetailScreen({super.key, required this.route});
+  const RouteDetailScreen({
+    super.key,
+    required this.shortName,
+    this.initialHeadsign,
+  });
 
-  final GtfsRoute route;
+  final String shortName;
+  final String? initialHeadsign;
 
   @override
   State<RouteDetailScreen> createState() => _RouteDetailScreenState();
@@ -19,27 +26,48 @@ class RouteDetailScreen extends StatefulWidget {
 
 class _RouteDetailScreenState extends State<RouteDetailScreen> {
   Trip? _selected;
+  bool _seeded = false;
+
+  void _seed(List<Trip> variants) {
+    if (_seeded || variants.isEmpty) return;
+    _seeded = true;
+    final wanted = widget.initialHeadsign;
+    if (wanted != null && wanted.trim().isNotEmpty) {
+      final w = wanted.toLowerCase();
+      for (final t in variants) {
+        final h = t.headsign.toLowerCase();
+        if (h == w || h.contains(w) || w.contains(h)) {
+          _selected = t;
+          return;
+        }
+      }
+    }
+    _selected = variants.first;
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final feed = app.feed;
-    final route = widget.route;
+    final number = widget.shortName;
 
     if (feed == null) {
       return Scaffold(
-        appBar: AppBar(title: Text('Carreira ${route.displayName}')),
+        appBar: AppBar(title: Text('Carreira $number')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
-    final trips = feed.trips.values.where((t) => t.routeId == route.id).toList();
+    final routes = feed.routesForShortName(number);
+    final rep = routes.isNotEmpty ? routes.first : null;
+    final trips = feed.tripsForShortName(number);
     final variants = _variants(trips);
-    final selected =
-        _selected ?? (variants.isNotEmpty ? variants.first : null);
+    _seed(variants);
+
+    final live = app.vehiclesForRouteNumber(number);
 
     return Scaffold(
-      appBar: AppBar(title: Text('Carreira ${route.displayName}')),
+      appBar: AppBar(title: Text('Carreira $number')),
       body: trips.isEmpty
           ? const EmptyState(
               icon: Icons.route,
@@ -51,56 +79,52 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                 Row(
                   children: [
                     LineBadge(
-                      label: route.displayName,
-                      colorValue: route.colorValue,
+                      label: number,
+                      colorValue: rep?.colorValue ?? 0xFF0B7A4E,
                       size: 46,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        route.longName.isNotEmpty &&
-                                route.longName != route.displayName
-                            ? route.longName
-                            : 'Carreira ${route.displayName}',
-                        style: Theme.of(context).textTheme.titleLarge,
+                        '${variants.length} destino${variants.length == 1 ? '' : 's'}',
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
+                    if (live.isNotEmpty)
+                      Chip(
+                        avatar: const Icon(Icons.directions_bus, size: 16),
+                        label: Text('${live.length} em direto'),
+                      ),
                   ],
                 ),
-                if (variants.length > 1) ...[
-                  const SizedBox(height: 16),
-                  Text('Destinos', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 36,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: variants.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (context, i) {
-                        final v = variants[i];
-                        final isSel = selected?.id == v.id;
-                        return ChoiceChip(
-                          selected: isSel,
-                          label: Text(v.headsign.isNotEmpty ? v.headsign : 'Viagem ${i + 1}'),
-                          onSelected: (_) => setState(() => _selected = v),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-                if (selected != null && selected.shapeId != null &&
-                    feed.shapes.containsKey(selected.shapeId)) ...[
-                  const SizedBox(height: 16),
-                  _ShapeMap(points: feed.shapes[selected.shapeId!]!),
-                ],
+                const SizedBox(height: 16),
+                _RouteMap(feed: feed, vehicles: live, routeColor: rep?.colorValue),
+                const SizedBox(height: 16),
+                Text('Variante', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (var i = 0; i < variants.length; i++)
+                      ChoiceChip(
+                        selected: _selected?.id == variants[i].id,
+                        label: Text(
+                          variants[i].headsign.isNotEmpty
+                              ? variants[i].headsign
+                              : 'Viagem ${i + 1}',
+                        ),
+                        onSelected: (_) =>
+                            setState(() => _selected = variants[i]),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 16),
                 Text('Paragens', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
-                if (selected == null)
-                  const EmptyState(icon: Icons.signpost, title: 'Seleciona um destino')
-                else
-                  ..._stopRows(feed, selected),
+                if (_selected == null)
+                  const EmptyState(icon: Icons.signpost, title: 'Seleciona uma variante')
+                else ..._stopRows(feed, _selected!),
               ],
             ),
     );
@@ -126,33 +150,80 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
       final key = t.headsign.isEmpty ? t.id : t.headsign;
       if (seen.add(key)) out.add(t);
     }
+    out.sort((a, b) => a.headsign.compareTo(b.headsign));
     return out;
   }
 }
 
-class _ShapeMap extends StatelessWidget {
-  const _ShapeMap({required this.points});
+/// Mapa da carreira: trajetos de todas as variantes + autocarros em direto.
+class _RouteMap extends StatelessWidget {
+  const _RouteMap({
+    required this.feed,
+    required this.vehicles,
+    this.routeColor,
+  });
 
-  final List<LatLng> points;
+  final GtfsFeed feed;
+  final List<LiveVehicle> vehicles;
+  final int? routeColor;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final bounds = LatLngBounds.fromPoints(points);
+    final color = routeColor != null ? Color(routeColor!) : scheme.primary;
+
+    // Um polyline por shape distinto das variantes da carreira.
+    final polylines = <Polyline>[];
+    final seenShapes = <String>{};
+    for (final trip in feed.trips.values) {
+      final sid = trip.shapeId;
+      if (sid == null || sid.isEmpty) continue;
+      if (!seenShapes.add(sid)) continue;
+      final pts = feed.shapes[sid];
+      if (pts == null || pts.length < 2) continue;
+      polylines.add(Polyline(
+        points: pts,
+        strokeWidth: 3,
+        color: color.withAlpha(120),
+      ));
+    }
+
+    final markers = <Marker>[
+      for (final v in vehicles)
+        Marker(
+          point: v.point,
+          width: 44,
+          height: 56,
+          alignment: Alignment.center,
+          child: BusMarkerWidget(
+            color: color,
+            bearing: v.bearing,
+            label: v.routeName,
+          ),
+        ),
+    ];
+
+    final allPoints = <LatLng>[
+      ...polylines.expand((p) => p.points),
+      ...vehicles.map((v) => v.point),
+    ];
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: SizedBox(
-        height: 240,
+        height: 280,
         child: FlutterMap(
           options: MapOptions(
-            initialCameraFit: CameraFit.bounds(
-              bounds: bounds,
-              padding: const EdgeInsets.all(24),
-            ),
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.drag | InteractiveFlag.pinchZoom | InteractiveFlag.doubleTapZoom,
-            ),
+            initialCenter: allPoints.isNotEmpty
+                ? allPoints.first
+                : const LatLng(38.6526, -9.0748),
+            initialZoom: 13,
+            initialCameraFit: allPoints.length >= 2
+                ? CameraFit.bounds(
+                    bounds: LatLngBounds.fromPoints(allPoints),
+                    padding: const EdgeInsets.all(32),
+                  )
+                : null,
           ),
           children: [
             TileLayer(
@@ -160,15 +231,8 @@ class _ShapeMap extends StatelessWidget {
               userAgentPackageName: 'com.example.tcb_live',
               maxZoom: 19,
             ),
-            PolylineLayer(
-              polylines: [
-                Polyline(
-                  points: points,
-                  strokeWidth: 5,
-                  color: scheme.primary,
-                ),
-              ],
-            ),
+            PolylineLayer(polylines: polylines),
+            MarkerLayer(markers: markers),
           ],
         ),
       ),
@@ -201,7 +265,6 @@ class _StopRow extends StatelessWidget {
             width: 28,
             child: Column(
               children: [
-                // Linha de ligação.
                 Expanded(
                   child: Container(
                     width: 2,
@@ -212,9 +275,7 @@ class _StopRow extends StatelessWidget {
                   width: isFirst || isLast ? 14 : 10,
                   height: isFirst || isLast ? 14 : 10,
                   decoration: BoxDecoration(
-                    color: isFirst || isLast
-                        ? scheme.primary
-                        : scheme.surface,
+                    color: isFirst || isLast ? scheme.primary : scheme.surface,
                     shape: BoxShape.circle,
                     border: Border.all(color: scheme.primary, width: 2),
                   ),
@@ -235,9 +296,8 @@ class _StopRow extends StatelessWidget {
               child: Text(
                 stop.name,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: isFirst || isLast
-                          ? FontWeight.w700
-                          : FontWeight.w400,
+                      fontWeight:
+                          isFirst || isLast ? FontWeight.w700 : FontWeight.w400,
                     ),
               ),
             ),
