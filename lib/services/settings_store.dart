@@ -17,6 +17,7 @@ class SettingsStore {
   static const _kBearingField = 'realtime_bearing_field';
   static const _kHeadsignField = 'realtime_headsign_field';
   static const _kColorField = 'realtime_color_field';
+  static const _kRefreshSeconds = 'refresh_seconds';
 
   static Future<SettingsStore> load() async {
     return SettingsStore._(await SharedPreferences.getInstance());
@@ -67,4 +68,8 @@ class SettingsStore {
 
   String get colorField => _prefs.getString(_kColorField) ?? '';
   Future<void> setColorField(String v) => _prefs.setString(_kColorField, v);
+
+  int get refreshSeconds => _prefs.getInt(_kRefreshSeconds) ?? 10;
+  Future<void> setRefreshSeconds(int v) =>
+      _prefs.setInt(_kRefreshSeconds, v);
 }
