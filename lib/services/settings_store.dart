@@ -12,6 +12,11 @@ class SettingsStore {
   static const _kRealtimeUrl = 'realtime_url';
   static const _kRealtimeEnabled = 'realtime_enabled';
   static const _kArrayPath = 'realtime_array_path';
+  static const _kLatField = 'realtime_lat_field';
+  static const _kLonField = 'realtime_lon_field';
+  static const _kBearingField = 'realtime_bearing_field';
+  static const _kHeadsignField = 'realtime_headsign_field';
+  static const _kColorField = 'realtime_color_field';
 
   static Future<SettingsStore> load() async {
     return SettingsStore._(await SharedPreferences.getInstance());
@@ -45,4 +50,21 @@ class SettingsStore {
           .toList();
   Future<void> setArrayPath(List<String> v) =>
       _prefs.setString(_kArrayPath, jsonEncode(v));
+
+  String get latField => _prefs.getString(_kLatField) ?? 'lat';
+  Future<void> setLatField(String v) => _prefs.setString(_kLatField, v);
+
+  String get lonField => _prefs.getString(_kLonField) ?? 'lon';
+  Future<void> setLonField(String v) => _prefs.setString(_kLonField, v);
+
+  String get bearingField => _prefs.getString(_kBearingField) ?? 'bearing';
+  Future<void> setBearingField(String v) =>
+      _prefs.setString(_kBearingField, v);
+
+  String get headsignField => _prefs.getString(_kHeadsignField) ?? 'headsign';
+  Future<void> setHeadsignField(String v) =>
+      _prefs.setString(_kHeadsignField, v);
+
+  String get colorField => _prefs.getString(_kColorField) ?? '';
+  Future<void> setColorField(String v) => _prefs.setString(_kColorField, v);
 }
