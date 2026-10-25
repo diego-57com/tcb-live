@@ -41,6 +41,9 @@ class AppState extends ChangeNotifier {
   String headsignField = 'headsign';
   String colorField = '';
 
+  /// Intervalo de atualização do tempo real (segundos).
+  int refreshSeconds = 10;
+
   LatLng? currentLocation;
 
   Timer? _pollTimer;
@@ -64,6 +67,7 @@ class AppState extends ChangeNotifier {
     bearingField = _settings!.bearingField;
     headsignField = _settings!.headsignField;
     colorField = _settings!.colorField;
+    refreshSeconds = _settings!.refreshSeconds;
 
     await loadGtfs();
     if (realtimeEnabled && realtimeUrl.isNotEmpty) {
@@ -133,9 +137,16 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> setRefreshSeconds(int seconds) async {
+    refreshSeconds = seconds.clamp(3, 120);
+    await _settings?.setRefreshSeconds(refreshSeconds);
+    if (realtimeEnabled) startRealtimePolling();
+    notifyListeners();
+  }
+
   void startRealtimePolling() {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+    _pollTimer = Timer.periodic(Duration(seconds: refreshSeconds), (_) {
       refreshVehicles();
     });
   }
@@ -168,6 +179,13 @@ class AppState extends ChangeNotifier {
       vehiclesLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Veículos cujo `routeName` (nº da carreira) corresponde ao número dado.
+  List<LiveVehicle> vehiclesForRouteNumber(String number) {
+    return vehicles
+        .where((v) => (v.routeName ?? '').trim() == number.trim())
+        .toList();
   }
 
   Future<bool> locateMe() async {
