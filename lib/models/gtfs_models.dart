@@ -237,6 +237,29 @@ class GtfsFeed {
     return out;
   }
 
+  /// Todas as routes (variantes) com o mesmo número curto.
+  List<GtfsRoute> routesForShortName(String shortName) {
+    final out = routes.values
+        .where((r) => r.shortName.trim() == shortName.trim())
+        .toList();
+    out.sort((a, b) => a.longName.compareTo(b.longName));
+    return out;
+  }
+
+  /// Primeira route com o número curto indicado.
+  GtfsRoute? routeByShortName(String shortName) {
+    for (final r in routes.values) {
+      if (r.shortName.trim() == shortName.trim()) return r;
+    }
+    return null;
+  }
+
+  /// Trips de todas as variantes com o mesmo número curto.
+  List<Trip> tripsForShortName(String shortName) {
+    final ids = routesForShortName(shortName).map((r) => r.id).toSet();
+    return trips.values.where((t) => ids.contains(t.routeId)).toList();
+  }
+
   static int _numCompare(String a, String b) {
     final na = int.tryParse(a);
     final nb = int.tryParse(b);
