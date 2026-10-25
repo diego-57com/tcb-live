@@ -9,6 +9,7 @@ class LiveVehicle {
     this.routeId,
     this.routeName,
     this.headsign,
+    this.routeColor,
     this.bearing,
     this.speedKmh,
     this.tripId,
@@ -19,8 +20,15 @@ class LiveVehicle {
   final double lat;
   final double lon;
   final String? routeId;
+
+  /// Número curto da carreira (ex.: "3", "15").
   final String? routeName;
+
+  /// Destino da viagem (ex.: "Terminal").
   final String? headsign;
+
+  /// Cor da carreira em ARGB (opcional).
+  final int? routeColor;
 
   /// Rumo em graus (0=N, 90=E); usado para rodar o ícone.
   final double? bearing;
@@ -39,6 +47,7 @@ class LiveVehicle {
     String? routeId,
     String? routeName,
     String? headsign,
+    int? routeColor,
     double? bearing,
     double? speedKmh,
     String? tripId,
@@ -51,6 +60,7 @@ class LiveVehicle {
       routeId: routeId ?? this.routeId,
       routeName: routeName ?? this.routeName,
       headsign: headsign ?? this.headsign,
+      routeColor: routeColor ?? this.routeColor,
       bearing: bearing ?? this.bearing,
       speedKmh: speedKmh ?? this.speedKmh,
       tripId: tripId ?? this.tripId,
