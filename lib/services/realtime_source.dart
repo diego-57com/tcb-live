@@ -4,20 +4,12 @@ import 'package:http/http.dart' as http;
 
 import '../models/vehicle.dart';
 
-/// Fonte de posições em tempo real.
-///
-/// A TCB não publica um feed aberto de posições (GTFS-RT); o "mapa em direto"
-/// do site usa um backend privado. Por isso a app expõe esta abstração:
-/// basta configurar uma [JsonVehiclesSource] com o URL do endpoint e o
-/// mapeamento dos campos JSON, e o resto da app funciona igual.
+/// Fonte de posições em tempo real (genérica e configurável pelo utilizador).
 abstract class RealtimeSource {
   Future<List<LiveVehicle>> fetch();
 }
 
 /// Extrai uma lista de veículos de um endpoint JSON.
-///
-/// O formato do JSON do backend privado pode variar; o [JsonVehiclesConfig]
-/// permite indicar onde está a lista e que campos correspondem a quê.
 class JsonVehiclesSource implements RealtimeSource {
   JsonVehiclesSource(this.config);
 
@@ -58,6 +50,7 @@ class JsonVehiclesSource implements RealtimeSource {
         routeId: _str(item, config.routeField),
         routeName: _str(item, config.routeNameField),
         headsign: _str(item, config.headsignField),
+        routeColor: _color(item, config.routeColorField),
         bearing: _num(item, config.bearingField),
         speedKmh: _num(item, config.speedField),
         tripId: _str(item, config.tripField),
@@ -78,6 +71,16 @@ class JsonVehiclesSource implements RealtimeSource {
     if (v == null) return null;
     if (v is num) return v.toDouble();
     return double.tryParse(v.toString());
+  }
+
+  static int? _color(Map item, String? path) {
+    final v = _dig(item, path);
+    if (v == null) return null;
+    final s = v.toString().trim().replaceFirst('#', '');
+    if (s.length == 6) {
+      return int.tryParse('FF$s', radix: 16);
+    }
+    return null;
   }
 
   static DateTime? _date(Map item, String? path) {
@@ -106,6 +109,9 @@ class JsonVehiclesSource implements RealtimeSource {
 }
 
 /// Configuração do mapeamento JSON → [LiveVehicle].
+///
+/// Os valores por omissão são genéricos; o utilizador configura na aplicação
+/// os caminhos específicos da fonte que quiser usar.
 class JsonVehiclesConfig {
   const JsonVehiclesConfig({
     required this.url,
@@ -116,6 +122,7 @@ class JsonVehiclesConfig {
     this.routeField = 'route_id',
     this.routeNameField = 'route_short_name',
     this.headsignField = 'headsign',
+    this.routeColorField,
     this.bearingField = 'bearing',
     this.speedField = 'speed',
     this.tripField = 'trip_id',
@@ -124,8 +131,7 @@ class JsonVehiclesConfig {
 
   final String url;
 
-  /// Caminho até ao array de veículos (ex.: `['data', 'vehicles']`).
-  /// Vazio se a raiz já for uma lista.
+  /// Caminho até ao array de veículos. Vazio se a raiz já for uma lista.
   final List<String> arrayPath;
 
   final String idField;
@@ -134,6 +140,7 @@ class JsonVehiclesConfig {
   final String? routeField;
   final String? routeNameField;
   final String? headsignField;
+  final String? routeColorField;
   final String? bearingField;
   final String? speedField;
   final String? tripField;
