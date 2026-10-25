@@ -8,9 +8,10 @@ import '../models/vehicle.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
 import '../widgets/markers.dart';
+import 'route_detail_screen.dart';
 import 'stop_detail_screen.dart';
 
-/// Mapa principal: paragens + posições em tempo real dos autocarros.
+/// Mapa principal: paragens, posições em tempo real e localização do utilizador.
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
@@ -73,13 +74,28 @@ class _MapScreenState extends State<MapScreen> {
     for (final v in app.vehicles) {
       markers.add(Marker(
         point: v.point,
-        width: 36,
-        height: 36,
+        width: 48,
+        height: 60,
         alignment: Alignment.center,
-        child: BusMarkerWidget(
-          color: _vehicleColor(context, app, v),
-          bearing: v.bearing,
+        child: GestureDetector(
+          onTap: () => _openVehicle(v),
+          child: BusMarkerWidget(
+            color: _vehicleColor(context, app, v),
+            bearing: v.bearing,
+            label: v.routeName,
+          ),
         ),
+      ));
+    }
+
+    // Ponto azul do utilizador.
+    if (app.currentLocation != null) {
+      markers.add(Marker(
+        point: app.currentLocation!,
+        width: 30,
+        height: 30,
+        alignment: Alignment.center,
+        child: const UserMarkerWidget(),
       ));
     }
 
@@ -103,7 +119,6 @@ class _MapScreenState extends State<MapScreen> {
             MarkerLayer(markers: markers),
           ],
         ),
-        // Indicador de tempo real.
         if (app.realtimeEnabled)
           Positioned(
             top: 12,
@@ -111,7 +126,6 @@ class _MapScreenState extends State<MapScreen> {
             right: 12,
             child: _RealtimeChip(app: app),
           ),
-        // Botões de ação.
         Positioned(
           right: 12,
           bottom: 12,
@@ -160,8 +174,8 @@ class _MapScreenState extends State<MapScreen> {
   Color _vehicleColor(BuildContext context, AppState app, LiveVehicle v) {
     if (v.routeColor != null) return Color(v.routeColor!);
     final feed = app.feed;
-    if (feed != null && v.routeId != null) {
-      final route = feed.routes[v.routeId];
+    if (feed != null && v.routeName != null) {
+      final route = feed.routeByShortName(v.routeName!);
       if (route != null) return Color(route.colorValue);
     }
     return Theme.of(context).colorScheme.primary;
@@ -173,9 +187,68 @@ class _MapScreenState extends State<MapScreen> {
 
   void _openStop(Stop stop) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => StopDetailScreen(stop: stop),
-      ),
+      MaterialPageRoute(builder: (_) => StopDetailScreen(stop: stop)),
+    );
+  }
+
+  void _openVehicle(LiveVehicle v) {
+    final number = (v.routeName ?? '').trim();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final color = _vehicleColor(context, context.read<AppState>(), v);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    LineBadge(
+                      label: number.isEmpty ? '?' : number,
+                      colorValue: color.toARGB32(),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        v.headsign ?? 'Autocarro $number',
+                        style: Theme.of(ctx).textTheme.titleMedium,
+                      ),
+                    ),
+                  ],
+                ),
+                if (v.bearing != null) ...[
+                  const SizedBox(height: 8),
+                  Text('Rumo: ${v.bearing!.round()}°'),
+                ],
+                const SizedBox(height: 16),
+                if (number.isNotEmpty)
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.route),
+                      label: Text('Ver carreira $number no mapa'),
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => RouteDetailScreen(
+                              shortName: number,
+                              initialHeadsign: v.headsign,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
