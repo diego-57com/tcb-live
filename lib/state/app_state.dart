@@ -31,9 +31,15 @@ class AppState extends ChangeNotifier {
   SettingsStore? _settings;
   Set<String> _favorites = const {};
 
+  // Configuração do tempo real (o utilizador preenche na app).
   String realtimeUrl = '';
   bool realtimeEnabled = false;
   List<String> realtimeArrayPath = const [];
+  String latField = 'lat';
+  String lonField = 'lon';
+  String bearingField = 'bearing';
+  String headsignField = 'headsign';
+  String colorField = '';
 
   LatLng? currentLocation;
 
@@ -44,10 +50,7 @@ class AppState extends ChangeNotifier {
   List<Stop> get favoriteStops {
     final f = feed;
     if (f == null) return const [];
-    return _favorites
-        .map((id) => f.stops[id])
-        .whereType<Stop>()
-        .toList();
+    return _favorites.map((id) => f.stops[id]).whereType<Stop>().toList();
   }
 
   Future<void> init() async {
@@ -56,6 +59,11 @@ class AppState extends ChangeNotifier {
     realtimeUrl = _settings!.realtimeUrl ?? '';
     realtimeEnabled = _settings!.realtimeEnabled;
     realtimeArrayPath = _settings!.arrayPath;
+    latField = _settings!.latField;
+    lonField = _settings!.lonField;
+    bearingField = _settings!.bearingField;
+    headsignField = _settings!.headsignField;
+    colorField = _settings!.colorField;
 
     await loadGtfs();
     if (realtimeEnabled && realtimeUrl.isNotEmpty) {
@@ -90,13 +98,29 @@ class AppState extends ChangeNotifier {
     required String url,
     required bool enabled,
     List<String>? arrayPath,
+    String? latField,
+    String? lonField,
+    String? bearingField,
+    String? headsignField,
+    String? colorField,
   }) async {
     realtimeUrl = url;
     realtimeEnabled = enabled;
     if (arrayPath != null) realtimeArrayPath = arrayPath;
+    if (latField != null) this.latField = latField;
+    if (lonField != null) this.lonField = lonField;
+    if (bearingField != null) this.bearingField = bearingField;
+    if (headsignField != null) this.headsignField = headsignField;
+    if (colorField != null) this.colorField = colorField;
+
     await _settings?.setRealtimeUrl(url);
     await _settings?.setRealtimeEnabled(enabled);
     await _settings?.setArrayPath(realtimeArrayPath);
+    await _settings?.setLatField(this.latField);
+    await _settings?.setLonField(this.lonField);
+    await _settings?.setBearingField(this.bearingField);
+    await _settings?.setHeadsignField(this.headsignField);
+    await _settings?.setColorField(this.colorField);
 
     if (enabled && url.isNotEmpty) {
       startRealtimePolling();
@@ -130,6 +154,11 @@ class AppState extends ChangeNotifier {
       final source = JsonVehiclesSource(JsonVehiclesConfig(
         url: realtimeUrl,
         arrayPath: realtimeArrayPath,
+        latField: latField,
+        lonField: lonField,
+        bearingField: bearingField,
+        headsignField: headsignField,
+        routeColorField: colorField.isEmpty ? null : colorField,
       ));
       vehicles = await source.fetch();
       realtimeError = null;
