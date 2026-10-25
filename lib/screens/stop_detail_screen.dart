@@ -7,6 +7,7 @@ import '../models/gtfs_models.dart';
 import '../services/departure_engine.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
+import 'route_detail_screen.dart';
 
 /// Detalhe de uma paragem: próximas passagens e carreiras que ali param.
 class StopDetailScreen extends StatefulWidget {
@@ -87,15 +88,22 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                 runSpacing: 8,
                 children: [
                   for (final r in routes)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        LineBadge(
-                          label: r.displayName,
-                          colorValue: r.colorValue,
-                          size: 26,
-                        ),
-                      ],
+                    ActionChip(
+                      avatar: LineBadge(
+                        label: r.displayName,
+                        colorValue: r.colorValue,
+                        size: 24,
+                      ),
+                      label: Text(r.longName.isNotEmpty ? r.longName : 'Carreira ${r.displayName}'),
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => RouteDetailScreen(
+                              shortName: r.shortName.trim().isEmpty ? r.id : r.shortName.trim(),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                 ],
               ),
@@ -129,7 +137,20 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
               )
             else
               for (final d in departures)
-                DepartureTile(departure: d, now: _now),
+                DepartureTile(
+                  departure: d,
+                  now: _now,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => RouteDetailScreen(
+                        shortName: d.route.shortName.trim().isEmpty
+                            ? d.route.id
+                            : d.route.shortName.trim(),
+                        initialHeadsign: d.headsign,
+                      ),
+                    ),
+                  ),
+                ),
           ],
         ),
       ),
