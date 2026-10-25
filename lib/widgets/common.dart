@@ -140,10 +140,12 @@ class DepartureTile extends StatelessWidget {
     super.key,
     required this.departure,
     required this.now,
+    this.onTap,
   });
 
   final Departure departure;
   final DateTime now;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -152,8 +154,11 @@ class DepartureTile extends StatelessWidget {
     final time = formatClock(departure.departureSeconds);
     final relative = mins <= 0 ? 'agora' : (mins < 60 ? '$mins min' : 'em ${mins ~/ 60}h${(mins % 60).toString().padLeft(2, '0')}');
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
       child: Row(
         children: [
           LineBadge(
@@ -207,6 +212,7 @@ class DepartureTile extends StatelessWidget {
             ],
           ),
         ],
+      ),
       ),
     );
   }
