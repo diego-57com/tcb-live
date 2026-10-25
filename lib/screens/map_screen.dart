@@ -158,6 +158,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Color _vehicleColor(BuildContext context, AppState app, LiveVehicle v) {
+    if (v.routeColor != null) return Color(v.routeColor!);
     final feed = app.feed;
     if (feed != null && v.routeId != null) {
       final route = feed.routes[v.routeId];
