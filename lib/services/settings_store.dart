@@ -18,6 +18,7 @@ class SettingsStore {
   static const _kHeadsignField = 'realtime_headsign_field';
   static const _kColorField = 'realtime_color_field';
   static const _kRefreshSeconds = 'refresh_seconds';
+  static const _kLocationTracking = 'location_tracking';
 
   static Future<SettingsStore> load() async {
     return SettingsStore._(await SharedPreferences.getInstance());
@@ -25,6 +26,10 @@ class SettingsStore {
 
   Set<String> get favoriteStopIds =>
       (_prefs.getStringList(_kFavorites) ?? const []).toSet();
+
+  bool get locationTracking => _prefs.getBool(_kLocationTracking) ?? false;
+  Future<void> setLocationTracking(bool v) =>
+      _prefs.setBool(_kLocationTracking, v);
 
   Future<void> setFavorite(String stopId, bool fav) async {
     final s = favoriteStopIds;
