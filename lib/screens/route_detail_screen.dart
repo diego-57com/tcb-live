@@ -431,7 +431,7 @@ class _StopRow extends StatefulWidget {
   final DateTime now;
 
   @override
-  State<_StopRow> createState() => _StopRowState;
+  State<_StopRow> createState() => _StopRowState();
 }
 
 class _StopRowState extends State<_StopRow> {
