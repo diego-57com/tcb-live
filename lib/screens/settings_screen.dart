@@ -165,6 +165,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 24),
+          _sectionTitle(context, 'Localização'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Acompanhar minha localização no mapa'),
+                    subtitle: const Text(
+                      'Atualiza a tua posição continuamente enquanto a app está aberta.',
+                    ),
+                    value: app.locationTracking,
+                    onChanged: (v) => app.setLocationTracking(v),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
           _sectionTitle(context, 'Dados'),
           Card(
             child: ListTile(
