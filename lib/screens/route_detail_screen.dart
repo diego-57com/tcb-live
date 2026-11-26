@@ -30,6 +30,7 @@ class RouteDetailScreen extends StatefulWidget {
 class _RouteDetailScreenState extends State<RouteDetailScreen> {
   Trip? _selected;
   bool _seeded = false;
+  int? _selectedDirection; // null = todos os sentidos
   DateTime _now = DateTime.now();
   Timer? _ticker;
 
@@ -79,16 +80,41 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
 
     final routes = feed.routesForShortName(number);
     final rep = routes.isNotEmpty ? routes.first : null;
-    final trips = feed.tripsForShortName(number);
+    final allTrips = feed.tripsForShortName(number);
+
+    // Direções (sentidos) disponíveis para esta carreira, com rótulo amigável.
+    final directionOptions = <int, String>{};
+    for (final t in allTrips) {
+      if (t.directionId != null &&
+          !directionOptions.containsKey(t.directionId)) {
+        directionOptions[t.directionId!] = t.headsign.isNotEmpty
+            ? t.headsign
+            : 'Sentido ${t.directionId}';
+      }
+    }
+
+    // Filtra viagens pelo sentido selecionado (null = todos).
+    final trips = _selectedDirection == null
+        ? allTrips
+        : allTrips.where((t) => t.directionId == _selectedDirection).toList();
+
     final variants = _variants(trips);
     _seed(variants);
 
     final selected = _selected;
-    // Filtrar autocarros pela variante selecionada
-    final liveVehicles = _vehiclesForVariant(
-      app.vehiclesForRouteNumber(number),
-      selected ?? (variants.isNotEmpty ? variants.first : null),
-    );
+
+    // Cabeçalhos de sentido das viagens filtradas, usados para filtrar autocarros.
+    final directionHeadsigns = trips
+        .map((t) => t.headsign.trim().toLowerCase())
+        .where((h) => h.isNotEmpty)
+        .toSet();
+
+    // Filtrar autocarros pela carreira e pelo sentido selecionado.
+    final liveVehicles = app.vehiclesForRouteNumber(number).where((v) {
+      final h = (v.headsign ?? '').trim().toLowerCase();
+      if (h.isEmpty) return true; // sem headsign → mostrar
+      return directionHeadsigns.contains(h);
+    }).toList();
 
     return Scaffold(
       appBar: AppBar(title: Text('Carreira $number')),
@@ -122,6 +148,37 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
+                // Seletor de sentido da carreira.
+                if (directionOptions.isNotEmpty) ...[
+                  Text('Sentido', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ChoiceChip(
+                        selected: _selectedDirection == null,
+                        label: const Text('Todos os sentidos'),
+                        onSelected: (_) => setState(() {
+                          _selectedDirection = null;
+                          _seeded = false;
+                          _selected = null;
+                        }),
+                      ),
+                      for (final entry in directionOptions.entries)
+                        ChoiceChip(
+                          selected: _selectedDirection == entry.key,
+                          label: Text(entry.value),
+                          onSelected: (_) => setState(() {
+                            _selectedDirection = entry.key;
+                            _seeded = false;
+                            _selected = null;
+                          }),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 Text('Variante', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Wrap(
@@ -177,7 +234,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
       final hV = (v.headsign ?? '').trim().toLowerCase();
       if (hV.isEmpty) return false; // veículo sem headsign → excluir
       // Match total ou parcial (contém)
-      return hV == h || hV.contains(h) || h.contains(h);
+      return hV == h || hV.contains(h) || h.contains(hV);
     }).toList();
     // Se ninguém match, mostrar todos (fallback)
     return matched.isEmpty ? vehicles : matched;
@@ -527,7 +584,7 @@ class _BusBubble extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        border: Border.color(Colors.white, width: 2),
+        border: Border.all(color: Colors.white, width: 2),
         boxShadow: const [
           BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 1)),
         ],
