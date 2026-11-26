@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:geolocator/geolocator.dart';
@@ -8,6 +9,8 @@ import '../models/gtfs_models.dart';
 /// Acesso à localização do utilizador (opcional e com tratamento de erros).
 class LocationService {
   const LocationService();
+
+  StreamSubscription<Position>? _sub;
 
   /// Posição atual, ou null se não houver permissão/serviço/erro.
   Future<LatLng?> currentPosition() async {
@@ -29,6 +32,37 @@ class LocationService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Pede permissão de localização. Devolve true se concedida.
+  Future<bool> requestTrackingPermission() async {
+    try {
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) return false;
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      return permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Inicia atualizações contínuas de posição. Chama [onPosition] a cada nova leitura.
+  void startTracking(void Function(LatLng) onPosition) {
+    stopTracking();
+    _sub = Geolocator.positionStream.listen((pos) {
+      onPosition(LatLng(pos.latitude, pos.longitude));
+    });
+  }
+
+  /// Para as atualizações contínuas.
+  void stopTracking() {
+    _sub?.cancel();
+    _sub = null;
   }
 
   /// Paragens ordenadas por distância à posição dada.
