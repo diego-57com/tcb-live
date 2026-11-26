@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/gtfs_models.dart';
@@ -47,6 +48,10 @@ class AppState extends ChangeNotifier {
   LatLng? currentLocation;
 
   Timer? _pollTimer;
+  StreamSubscription<Position>? _locationSub;
+
+  /// Se a localização do dispositivo deve ser atualizada continuamente no mapa.
+  bool locationTracking = false;
 
   Set<String> get favorites => _favorites;
 
@@ -68,10 +73,14 @@ class AppState extends ChangeNotifier {
     headsignField = _settings!.headsignField;
     colorField = _settings!.colorField;
     refreshSeconds = _settings!.refreshSeconds;
+    locationTracking = _settings!.locationTracking;
 
     await loadGtfs();
     if (realtimeEnabled && realtimeUrl.isNotEmpty) {
       startRealtimePolling();
+    }
+    if (locationTracking) {
+      startLocationTracking();
     }
   }
 
@@ -204,9 +213,38 @@ class AppState extends ChangeNotifier {
     return _location.nearestStops(f, origin, limit: limit);
   }
 
+  /// Ativa/desativa o acompanhamento contínuo da localização no mapa.
+  Future<void> setLocationTracking(bool v) async {
+    locationTracking = v;
+    await _settings?.setLocationTracking(v);
+    if (v) {
+      startLocationTracking();
+    } else {
+      stopLocationTracking();
+    }
+    notifyListeners();
+  }
+
+  void startLocationTracking() {
+    stopLocationTracking();
+    final ok = _location.requestTrackingPermission();
+    ok.then((granted) {
+      if (!granted) return;
+      _location.startTracking((p) {
+        currentLocation = p;
+        notifyListeners();
+      });
+    });
+  }
+
+  void stopLocationTracking() {
+    _location.stopTracking();
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
+    stopLocationTracking();
     super.dispose();
   }
 }
