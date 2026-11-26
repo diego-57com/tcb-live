@@ -19,7 +19,7 @@ class AppState extends ChangeNotifier {
   AppState();
 
   final GtfsRepository _repository = GtfsRepository();
-  final LocationService _location = const LocationService();
+  final LocationService _location = LocationService();
 
   GtfsFeed? feed;
   bool loading = true;
