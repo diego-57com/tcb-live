@@ -8,7 +8,7 @@ import '../models/gtfs_models.dart';
 
 /// Acesso à localização do utilizador (opcional e com tratamento de erros).
 class LocationService {
-  const LocationService();
+  LocationService();
 
   StreamSubscription<Position>? _sub;
 
@@ -54,7 +54,12 @@ class LocationService {
   /// Inicia atualizações contínuas de posição. Chama [onPosition] a cada nova leitura.
   void startTracking(void Function(LatLng) onPosition) {
     stopTracking();
-    _sub = Geolocator.positionStream.listen((pos) {
+    _sub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((pos) {
       onPosition(LatLng(pos.latitude, pos.longitude));
     });
   }
